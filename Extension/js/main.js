@@ -407,6 +407,7 @@ if (window.location.href == "https://account.aq.com/AQW/Inventory") {
 	// Get items and process it 
 	chrome.storage.local.get({aqwitems: []}, function(result){
 			var Items = result.aqwitems;
+			var foundItems = []; // Array to store found item names
 			
 			if (isMerge) {
 				DisplayCostMergeShop(Items, mergeFilterNormal, mergeFilterAc, mergeFilterLegend)
@@ -419,8 +420,18 @@ if (window.location.href == "https://account.aq.com/AQW/Inventory") {
 			// Iterate over nodelist with array offset applied 
 			for (var x = 0; x < arrayList.length; x++) {
 				
+				// Store the current found count before processing
+				var prevFound = found;
+				
 				ProcessWikiItem(nodeList, arrayOffset, Items, Buy, Category, Where, Type, x, isMerge, isList, isQuest, isMonster) 
 				
+				// If found count increased, add this item to foundItems array
+				if (found > prevFound) {
+					var itemName = arrayList[x].textContent.trim() || arrayList[x].href;
+					if (itemName && !foundItems.includes(itemName)) {
+						foundItems.push(itemName);
+					}
+				}
 				
 				// Wip process (Can be enabled in options of Extension.
 				if (WIP_moreinfo) {
@@ -433,8 +444,13 @@ if (window.location.href == "https://account.aq.com/AQW/Inventory") {
 			}
 			
 			
-			// Displays found amount 
-			found_info.innerHTML = "- Found "+found+" Items" // Displays items found 
+			// Get unique items count by creating a Set of item names/links
+			const uniqueItems = new Set(arrayList.map(item => item.textContent.trim() || item.href));
+			const uniqueItemsCount = uniqueItems.size;
+			
+			// Displays found amount with hover tooltip showing found items
+			found_info.innerHTML = "- Found " + found + " / " + uniqueItemsCount + " Items" // Displays items found out of total unique items
+			found_info.title = foundItems.length > 0 ? "Items you have:\n" + foundItems.join("\n") : "No items found";
 			
 	})
 	

@@ -15,8 +15,8 @@
             --bs-primary-rgb: 63,11,44;
             --bs-light: #efdfc2;
             --bs-light-rgb: 239,223,194;
-            background: linear-gradient(#5b2c48 84%, #441832 100%), #5b2c48;
-            color: #ffffff;
+            background-color: #efdfc2;
+            color: #333333;
             min-height: 100vh;
         }
         
@@ -27,17 +27,19 @@
         }
         
         .list-management {
-            background: rgba(190,190,190,0.16);
+            background: linear-gradient(#5b2c48 84%, #441832 100%), #5b2c48;
+            color: #efdfc2;
             padding: 20px;
             border-radius: 8px;
-            border: 1px solid #444;
+            border: 1px solid #716550;
         }
         
         .list-content {
-            background: rgba(190,190,190,0.16);
+            background: linear-gradient(#5b2c48 84%, #441832 100%), #5b2c48;
+            color: #efdfc2;
             padding: 20px;
             border-radius: 8px;
-            border: 1px solid #444;
+            border: 1px solid #716550;
         }
         
         .list-item {
@@ -99,6 +101,95 @@
             margin-bottom: 15px;
         }
         
+        /* Progress bar styles */
+        .progress-bar {
+            width: 100%;
+            height: 8px;
+            background-color: #333;
+            border-radius: 4px;
+            overflow: hidden;
+            margin-top: 5px;
+        }
+        
+        .progress-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #4CAF50, #8BC34A);
+            transition: width 0.3s ease;
+        }
+        
+        /* Item status styles */
+        .item-completed {
+            opacity: 0.7;
+            background: rgba(76, 175, 80, 0.1);
+        }
+        
+        .item-in-progress {
+            background: rgba(255, 193, 7, 0.1);
+        }
+        
+        .item-actions {
+            display: flex;
+            gap: 5px;
+        }
+        
+        .toggle-status-btn {
+            background: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 3px;
+            padding: 4px 8px;
+            cursor: pointer;
+            font-size: 12px;
+        }
+        
+        .toggle-status-btn:hover {
+            background: #45a049;
+        }
+        
+        .item-status {
+            padding: 2px 8px;
+            border-radius: 12px;
+            font-size: 11px;
+            font-weight: bold;
+            text-transform: uppercase;
+        }
+        
+        .status-completed {
+            background-color: #4CAF50;
+            color: white;
+        }
+        
+        .status-in-progress {
+            background-color: #FF9800;
+            color: white;
+        }
+        
+        .item-details {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin: 8px 0;
+        }
+        
+        .tag-icon {
+            width: 16px;
+            height: 16px;
+            margin-right: 3px;
+        }
+        
+        .filter-icon-group {
+            display: flex;
+            align-items: center;
+            padding: 5px;
+            border-radius: 3px;
+            background: rgba(87, 40, 68, 0.3);
+            border: 1px solid #716550;
+        }
+        
+        .filter-icon-group:hover {
+            background: rgba(87, 40, 68, 0.5);
+        }
+        
         .input-group label {
             display: block;
             margin-bottom: 5px;
@@ -147,9 +238,9 @@
     </style>
 </head>
 
-<body class="text-light flex-grow-1 flex-shrink-0 flex-fill">
+<body class="text-light flex-grow-1 flex-shrink-0 flex-fill" style="--bs-primary: #3f0b2c;--bs-primary-rgb: 63,11,44;--bs-light: #efdfc2;--bs-light-rgb: 239,223,194;">
     <nav class="navbar navbar-dark navbar-expand-md bg-primary bg-gradient py-3" data-bss-hover-animate="bounce" style="background: #3c7bc3;">
-        <div class="container"><span>AqwDoIHave {Custom Farm Lists};</span><a class="navbar-brand d-flex align-items-center" href="#"></a>
+        <div class="container"><span>AqwDoIHave - Custom Farm Lists</span><a class="navbar-brand d-flex align-items-center" href="#"></a>
             <div class="collapse navbar-collapse flex-grow-0 order-md-first" id="navcol-6">
                 <ul class="navbar-nav me-auto">
                     <li class="nav-item"></li>
@@ -157,8 +248,8 @@
                 </ul>
             </div>
             <div class="d-none d-md-block">
-                <button class="btn btn-outline-light me-2" onclick="goToFarmPage()" type="button">To Farm Page</button>
-                <button class="btn btn-outline-light me-2" onclick="goToMainWiki()" type="button">Back to Wiki</button>
+                <button class="btn btn-outline-light me-2" id="toFarmPageBtn" type="button">To Farm Page</button>
+                <button class="btn btn-outline-light me-2" id="backToWikiBtn" type="button">Back to Wiki</button>
             </div>
         </div>
     </nav>
@@ -173,7 +264,7 @@
                     <label for="listName">New List Name:</label>
                     <input type="text" id="listName" placeholder="Enter list name...">
                 </div>
-                <button class="btn" onclick="createNewList()">Create List</button>
+                <button class="btn" id="createListBtn">Create List</button>
                 
                 <div id="farmLists" style="margin-top: 20px;">
                     <!-- Lists will be populated here -->
@@ -184,12 +275,66 @@
                     <div id="listStats">
                         <p>Total Lists: <span id="totalLists">0</span></p>
                         <p>Total Items: <span id="totalItems">0</span></p>
+                        <p>In Progress: <span id="inProgressItems">0</span></p>
+                        <p>Completed: <span id="completedItems">0</span></p>
                     </div>
                 </div>
             </div>
             
             <div class="list-content">
                 <h2 id="currentListTitle" style="color: #efdfc2;">Select a list to view items</h2>
+                
+                <!-- View Navigation -->
+                <div id="viewNavigation" style="display: none; margin-bottom: 20px;">
+                    <button class="btn" id="viewInProgressBtn" style="margin-right: 10px;">In Progress Items</button>
+                    <button class="btn secondary" id="viewDoneBtn">Completed Items</button>
+                    <div id="currentListInfo" style="margin-top: 10px; font-size: 14px; color: #b3a082;">
+                        <!-- List info will be shown here -->
+                    </div>
+                </div>
+                
+                <!-- Filter Section (only for in-progress view) -->
+                <div id="filterSection" style="display: none; margin-bottom: 20px; padding: 15px; background: rgba(190,190,190,0.16); border-radius: 5px; border: 1px solid #716550;">
+                    <h4 style="color: #efdfc2; margin-bottom: 15px;">Filters</h4>
+                    <div style="display: flex; flex-wrap: wrap; gap: 15px; align-items: center;">
+                        <!-- Icon-based filters matching tofarm.html style -->
+                        <span class="filter-icon-group">
+                            <input title="Normal Items" id="filterNormal" type="checkbox" checked style="width: 20px; height: 20px;">
+                            <img title="Normal Items" src="images/normal_icon.png" style="width: 25px; margin-left: 5px;">
+                        </span>
+                        
+                        <span class="filter-icon-group">
+                            <input title="AC Items" id="filterAC" type="checkbox" checked style="width: 20px; height: 20px;">
+                            <img title="AC Items" src="http://aqwwiki.wdfiles.com/local--files/image-tags/aclarge.png" style="width: 25px; margin-left: 5px;">
+                        </span>
+                        
+                        <span class="filter-icon-group">
+                            <input title="Legend Items" id="filterLegend" type="checkbox" checked style="width: 20px; height: 20px;">
+                            <img title="Legend Items" src="http://aqwwiki.wdfiles.com/local--files/image-tags/legendlarge.png" style="width: 25px; margin-left: 5px;">
+                        </span>
+                        
+                        <span class="filter-icon-group">
+                            <input title="Seasonal Items" id="filterSeasonal" type="checkbox" checked style="width: 20px; height: 20px;">
+                            <img title="Seasonal Items" src="images/treasurechest_icon.png" style="width: 25px; margin-left: 5px;">
+                        </span>
+                        
+                        <span class="filter-icon-group">
+                            <input title="Monster Drops" id="filterDrop" type="checkbox" checked style="width: 20px; height: 20px;">
+                            <img title="Monster Drops" src="images/monster_drop.png" style="width: 25px; margin-left: 5px;">
+                        </span>
+                        
+                        <span class="filter-icon-group">
+                            <input title="Quest Items" id="filterQuest" type="checkbox" checked style="width: 20px; height: 20px;">
+                            <img title="Quest Items" src="images/quest_icon.png" style="width: 25px; margin-left: 5px;">
+                        </span>
+                        
+                        <span class="filter-icon-group">
+                            <input title="Merge Items" id="filterMerge" type="checkbox" checked style="width: 20px; height: 20px;">
+                            <img title="Merge Items" src="images/mergeshop_icon.png" style="width: 25px; margin-left: 5px;">
+                        </span>
+                    </div>
+                </div>
+                
                 <div id="currentListItems">
                     <!-- Current list items will be shown here -->
                 </div>
@@ -208,8 +353,8 @@
                         <label for="itemNotes">Notes (optional):</label>
                         <input type="text" id="itemNotes" placeholder="Personal notes...">
                     </div>
-                    <button class="btn" onclick="addItemToCurrentList()">Add Item</button>
-                    <button class="btn secondary" onclick="importFromWiki()">Import from Current Wiki Page</button>
+                    <button class="btn" id="addItemBtn">Add Item</button>
+                    <button class="btn secondary" id="importFromWikiBtn">Import from Current Wiki Page</button>
                 </div>
             </div>
         </div>

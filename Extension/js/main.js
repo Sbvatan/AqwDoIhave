@@ -114,6 +114,10 @@ function goto_ToFarm() {
 	document.location.href = chrome.runtime.getURL("tofarm.html")
 }
 
+function goto_CustomFarmList() {
+	document.location.href = chrome.runtime.getURL("custom-farm-list.html")
+}
+
 
 function processAcountBackground() {
 	var prevurl = document.location.href 
@@ -130,7 +134,6 @@ function addToFarm_button() {
 	ToFarm.style = "background-color: Transparent;border: none;" 
 	ToFarm.innerHTML = " <img style='height:35px;' src="+tofarm_icon+"></img>"
 	header.prepend(ToFarm)
-	
 }
 
 function addUpdateInventory_button() {
@@ -451,6 +454,10 @@ if (window.location.href == "https://account.aq.com/AQW/Inventory") {
 			// Displays found amount with hover tooltip showing found items
 			found_info.innerHTML = "- Found " + found + " / " + uniqueItemsCount + " Items" // Displays items found out of total unique items
 			found_info.title = foundItems.length > 0 ? "Items you have:\n" + foundItems.join("\n") : "No items found";
+			
+			// Save found items and current page for custom farm list integration
+			chrome.storage.local.set({lastFoundItems: foundItems}, function() {});
+			chrome.storage.local.set({lastWikiPage: window.location.href}, function() {});
 			
 	})
 	

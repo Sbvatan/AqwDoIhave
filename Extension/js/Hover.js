@@ -13,9 +13,9 @@ jQuery.noConflict();
     var controller = null;
     var timeout = null;
 
-    $("body").on("mouseover", "#page-content a, .card.m-2.m-lg-3 a, #inventoryRendered a, #site-changes-list a", function() {
+    $("body").on("mouseover", "#page-content a, .card.m-2.m-lg-3 a, #inventoryRendered a, #site-changes-list a, #table-content a", function() {
         hovered(this.href);
-    }).on("mouseout", "#page-content a, .card.m-2.m-lg-3 a, #inventoryRendered a, #site-changes-list a", function() {
+    }).on("mouseout", "#page-content a, .card.m-2.m-lg-3 a, #inventoryRendered a, #site-changes-list a, #table-content a", function() {
         unhovered();
     });
 

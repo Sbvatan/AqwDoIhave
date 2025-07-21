@@ -33,9 +33,12 @@ async function add_to_table(table,item_name,item_details, av_item_count, avaliab
 	let td_1 = document.createElement("td")
 	let td_2 = document.createElement("td")
 	let td_3 = document.createElement("td")
+	let td_4 = document.createElement("td") // New column for actions
 	av_item_count+=1
 	
-	td_1.innerHTML = item_name
+	// Make item name a link to wiki page for hover preview functionality
+	const wikiUrl = `http://aqwwiki.wikidot.com/${item_name.replace(/\s+/g, '-').toLowerCase()}`;
+	td_1.innerHTML = `<a href="${wikiUrl}" target="_blank" style="color: #4da6ff; text-decoration: underline;">${item_name}</a>`
 	
 	if (item_details[1][1][0] == "Drop" || item_details[1][1][0] == "Quest" || item_details[1][1][0] == "Merge") {
 		if  (item_details[1][1][1] !== "") {
@@ -73,9 +76,32 @@ async function add_to_table(table,item_name,item_details, av_item_count, avaliab
 		td_3.innerHTML = td_3.innerHTML + "<img style='height:20px' src='"+seasonal_large+"'></img>"
 	}
 	
+	// Add to custom farm list button - get source information for better context
+	let sourceInfo = "Unknown";
+	if (item_details[1][1][0] == "Drop" || item_details[1][1][0] == "Quest" || item_details[1][1][0] == "Merge") {
+		sourceInfo = `${item_details[1][1][0]}: ${item_details[1][1][1] || 'Unknown'}`;
+	}
+	
+	// Create button with both onclick and event listener approach for better compatibility
+	const addListBtn = document.createElement('button');
+	addListBtn.innerHTML = '+ List';
+	addListBtn.style.cssText = 'background-color: #4CAF50; color: white; border: none; padding: 5px 10px; cursor: pointer; border-radius: 3px; font-size: 12px;';
+	addListBtn.title = 'Add to Custom Farm List';
+	addListBtn.setAttribute('data-item-name', item_name);
+	addListBtn.setAttribute('data-item-source', sourceInfo);
+	
+	// Add event listener
+	addListBtn.addEventListener('click', function() {
+		console.log('Button clicked for:', item_name);
+		addToCustomFarmList(item_name, sourceInfo);
+	});
+	
+	td_4.appendChild(addListBtn);
+	
 	tr.appendChild(td_1)
 	tr.appendChild(td_2)
 	tr.appendChild(td_3)
+	tr.appendChild(td_4)
 	table.appendChild(tr)
 
 	
@@ -222,6 +248,217 @@ async function process_ToFarm_Page() {
 const drop_icon = chrome.runtime.getURL("images/monster_drop.png")
 const quest_icon = chrome.runtime.getURL("images/quest_icon.png")
 const mergeshop_icon = chrome.runtime.getURL("images/mergeshop_icon.png")
+
+// Navigation function for custom farm lists
+function goToCustomFarmLists() {
+    window.location.href = chrome.runtime.getURL("custom-farm-list.html");
+}
+
+// Make navigation function globally available
+window.goToCustomFarmLists = goToCustomFarmLists;
+
+// Integration with custom farm lists
+function addToCustomFarmList(itemName, itemSource = null) {
+    console.log('addToCustomFarmList called with:', itemName, itemSource);
+    // Get current farm lists
+    chrome.storage.local.get({customFarmLists: {}}, function(result) {
+        const farmLists = result.customFarmLists;
+        const listNames = Object.keys(farmLists);
+        
+        // Create a modal-like dialog for better UX
+        showListSelectionDialog(itemName, itemSource, farmLists, listNames);
+    });
+}
+
+function showListSelectionDialog(itemName, itemSource, farmLists, listNames) {
+    // Remove any existing dialog
+    const existingDialog = document.getElementById('listSelectionDialog');
+    if (existingDialog) {
+        existingDialog.remove();
+    }
+    
+    // Create dialog HTML
+    const dialogHtml = `
+        <div id="listSelectionDialog" style="
+            position: fixed; 
+            top: 0; left: 0; 
+            width: 100%; height: 100%; 
+            background: rgba(0,0,0,0.7); 
+            z-index: 10000; 
+            display: flex; 
+            align-items: center; 
+            justify-content: center;
+        ">
+            <div style="
+                background: #2a2a2a; 
+                color: white; 
+                padding: 30px; 
+                border-radius: 10px; 
+                max-width: 500px; 
+                width: 90%;
+                box-shadow: 0 0 20px rgba(0,0,0,0.5);
+            ">
+                <h3 style="margin-top: 0; color: #4CAF50;">Add "${itemName}" to Farm List</h3>
+                
+                ${listNames.length > 0 ? `
+                    <div style="margin-bottom: 20px;">
+                        <h4>Select Existing List:</h4>
+                        <select id="existingListSelect" style="
+                            width: 100%; 
+                            padding: 10px; 
+                            background: #444; 
+                            color: white; 
+                            border: 1px solid #666; 
+                            border-radius: 5px;
+                            margin-bottom: 10px;
+                        ">
+                            <option value="">-- Select a list --</option>
+                            ${listNames.map(name => `
+                                <option value="${name}">${name} (${farmLists[name].items.length} items)</option>
+                            `).join('')}
+                        </select>
+                        <button onclick="addToSelectedList('${itemName.replace(/'/g, "\\'")}', '${(itemSource || '').replace(/'/g, "\\'")}');" style="
+                            background: #4CAF50; 
+                            color: white; 
+                            border: none; 
+                            padding: 10px 20px; 
+                            border-radius: 5px; 
+                            cursor: pointer;
+                            width: 100%;
+                            margin-bottom: 15px;
+                        ">Add to Selected List</button>
+                    </div>
+                    
+                    <div style="text-align: center; margin: 20px 0; color: #888;">
+                        <span>-- OR --</span>
+                    </div>
+                ` : ''}
+                
+                <div style="margin-bottom: 20px;">
+                    <h4>Create New List:</h4>
+                    <input type="text" id="newListName" placeholder="Enter new list name..." style="
+                        width: 100%; 
+                        padding: 10px; 
+                        background: #444; 
+                        color: white; 
+                        border: 1px solid #666; 
+                        border-radius: 5px;
+                        margin-bottom: 10px;
+                    ">
+                    <button onclick="createNewListAndAdd('${itemName.replace(/'/g, "\\'")}', '${(itemSource || '').replace(/'/g, "\\'")}');" style="
+                        background: #008CBA; 
+                        color: white; 
+                        border: none; 
+                        padding: 10px 20px; 
+                        border-radius: 5px; 
+                        cursor: pointer;
+                        width: 100%;
+                    ">Create List & Add Item</button>
+                </div>
+                
+                <div style="text-align: center;">
+                    <button onclick="closeListDialog()" style="
+                        background: #f44336; 
+                        color: white; 
+                        border: none; 
+                        padding: 10px 20px; 
+                        border-radius: 5px; 
+                        cursor: pointer;
+                    ">Cancel</button>
+                </div>
+            </div>
+        </div>
+    `;
+    
+    document.body.insertAdjacentHTML('beforeend', dialogHtml);
+}
+
+function addToSelectedList(itemName, itemSource) {
+    const selectedList = document.getElementById('existingListSelect').value;
+    if (!selectedList) {
+        alert('Please select a list');
+        return;
+    }
+    
+    performAddToList(itemName, itemSource, selectedList);
+}
+
+function createNewListAndAdd(itemName, itemSource) {
+    const newListName = document.getElementById('newListName').value.trim();
+    if (!newListName) {
+        alert('Please enter a list name');
+        return;
+    }
+    
+    // Check if list already exists
+    chrome.storage.local.get({customFarmLists: {}}, function(result) {
+        if (result.customFarmLists[newListName]) {
+            alert('A list with this name already exists');
+            return;
+        }
+        
+        // Create new list
+        const farmLists = result.customFarmLists;
+        farmLists[newListName] = {
+            items: [],
+            created: new Date().toISOString(),
+            lastModified: new Date().toISOString()
+        };
+        
+        chrome.storage.local.set({customFarmLists: farmLists}, function() {
+            performAddToList(itemName, itemSource, newListName);
+        });
+    });
+}
+
+function performAddToList(itemName, itemSource, listName) {
+    chrome.storage.local.get({customFarmLists: {}}, function(result) {
+        const farmLists = result.customFarmLists;
+        
+        // Check if item already exists in the list
+        const existingItem = farmLists[listName].items.find(item => 
+            item.name.toLowerCase() === itemName.toLowerCase()
+        );
+        
+        if (existingItem) {
+            alert(`"${itemName}" is already in the "${listName}" list`);
+            closeListDialog();
+            return;
+        }
+        
+        // Add item to the list
+        const newItem = {
+            name: itemName,
+            source: itemSource || 'Added from To Farm page',
+            notes: '',
+            obtained: false,
+            added: new Date().toISOString()
+        };
+        
+        farmLists[listName].items.push(newItem);
+        farmLists[listName].lastModified = new Date().toISOString();
+        
+        // Save updated lists
+        chrome.storage.local.set({customFarmLists: farmLists}, function() {
+            alert(`"${itemName}" added to "${listName}" list successfully!`);
+            closeListDialog();
+        });
+    });
+}
+
+function closeListDialog() {
+    const dialog = document.getElementById('listSelectionDialog');
+    if (dialog) {
+        dialog.remove();
+    }
+}
+
+// Make all dialog-related functions globally available immediately
+window.addToCustomFarmList = addToCustomFarmList;
+window.addToSelectedList = addToSelectedList;
+window.createNewListAndAdd = createNewListAndAdd;
+window.closeListDialog = closeListDialog;
+window.goToCustomFarmLists = goToCustomFarmLists;
 
 
 if (window.location.href.includes("tofarm.html")) {

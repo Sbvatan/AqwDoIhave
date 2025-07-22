@@ -291,6 +291,11 @@ async function ProcessWikiItem(nodeList, arrayOffset, Items, Buy, Category, Wher
 	
 	
 	if (isRep) { 
+		// Increment the global counter for items actually processed
+		if (typeof totalItemsProcessed !== 'undefined') {
+			totalItemsProcessed++;
+		}
+		
 		if (Items.includes(nodeText)) {
 			nodeText = nodeText
 			nodeList[arrayOffset+x].style = "font-weight: bold;color:green;"

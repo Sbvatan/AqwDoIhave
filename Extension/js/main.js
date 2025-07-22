@@ -17,7 +17,19 @@ const normal_icon = chrome.runtime.getURL("images/normal_icon.png")
 
 const wiki_searchpage = "aqwwiki.wikidot.com/search-items"
 var found = 0 
+var totalItemsProcessed = 0  // Track items actually processed by ProcessWikiItem
 var filterMergeAc = false 
+
+// Helper function to load JSON data
+function getJson(theUrl) {
+    var xmlHttp = new XMLHttpRequest();
+    xmlHttp.open( "GET", theUrl, false ); 
+	xmlHttp.send(null);
+    return JSON.parse(xmlHttp.responseText)
+}
+
+// Load wiki exclude suffixes for item analysis
+var wiki_exclude_suffixes = getJson(chrome.runtime.getURL("data/wiki_exclude_suffixes.json")) 
 
 
 // WIP stuff 
@@ -161,6 +173,421 @@ function addUpdateInventory_button() {
 
 }
 
+var itemAnalysisData = {
+	ownedItems: [],
+	notOwnedItems: [],
+	allProcessedItems: []
+};
+
+function showItemAnalysisPopup() {
+	// Remove any existing dialog
+	const existingDialog = document.getElementById('itemAnalysisDialog');
+	if (existingDialog) {
+		existingDialog.remove();
+	}
+	
+	const ownedCount = itemAnalysisData.ownedItems.length;
+	const notOwnedCount = itemAnalysisData.notOwnedItems.length;
+	
+	// Create the popup dialog
+	const dialogHtml = `
+		<div id="itemAnalysisDialog" style="
+			position: fixed; 
+			top: 0; left: 0; 
+			width: 100%; height: 100%; 
+			background: rgba(0,0,0,0.8); 
+			z-index: 10000; 
+			display: flex; 
+			align-items: center; 
+			justify-content: center;
+		">
+			<div style="
+				background: linear-gradient(#5b2c48 84%, #441832 100%), #5b2c48; 
+				color: white; 
+				padding: 20px; 
+				border-radius: 10px; 
+				max-width: 90%; 
+				max-height: 90%;
+				width: 800px;
+				height: 600px;
+				box-shadow: 0 0 20px rgba(0,0,0,0.8);
+				border: 2px solid #716550;
+				overflow: hidden;
+				display: flex;
+				flex-direction: column;
+			">
+				<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+					<h3 style="margin: 0; color: #efdfc2;">Item Analysis</h3>
+					<button id="closeAnalysisBtn" style="
+						background: #f44336; 
+						color: white; 
+						border: none; 
+						padding: 8px 15px; 
+						border-radius: 5px; 
+						cursor: pointer;
+						font-size: 16px;
+					">×</button>
+				</div>
+				
+				<div style="display: flex; margin-bottom: 20px;">
+					<button id="ownedTab" class="analysis-tab active" data-tab="owned" style="
+						background: #4CAF50; 
+						color: white; 
+						border: none; 
+						padding: 10px 20px; 
+						border-radius: 5px 5px 0 0; 
+						cursor: pointer;
+						font-size: 16px;
+						margin-right: 2px;
+					">Items You Own (${ownedCount})</button>
+					<button id="notOwnedTab" class="analysis-tab" data-tab="notowned" style="
+						background: #572844; 
+						color: white; 
+						border: none; 
+						padding: 10px 20px; 
+						border-radius: 5px 5px 0 0; 
+						cursor: pointer;
+						font-size: 16px;
+					">Items You Don't Own (${notOwnedCount})</button>
+				</div>
+				
+				<div id="analysisContent" style="
+					flex: 1; 
+					overflow-y: auto; 
+					background: rgba(0,0,0,0.3); 
+					padding: 15px; 
+					border-radius: 5px;
+				">
+					<!-- Content will be populated here -->
+				</div>
+			</div>
+		</div>
+	`;
+	
+	document.body.insertAdjacentHTML('beforeend', dialogHtml);
+	
+	// Add event listeners
+	setTimeout(() => {
+		document.getElementById('closeAnalysisBtn').addEventListener('click', closeItemAnalysis);
+		document.getElementById('ownedTab').addEventListener('click', () => switchAnalysisTab('owned'));
+		document.getElementById('notOwnedTab').addEventListener('click', () => switchAnalysisTab('notowned'));
+		
+		// Close on background click
+		document.getElementById('itemAnalysisDialog').addEventListener('click', function(e) {
+			if (e.target === this) closeItemAnalysis();
+		});
+		
+		// Show owned items by default
+		switchAnalysisTab('owned');
+	}, 100);
+}
+
+function switchAnalysisTab(tabType) {
+	// Update tab appearance
+	document.querySelectorAll('.analysis-tab').forEach(tab => {
+		tab.style.background = '#572844';
+		tab.classList.remove('active');
+	});
+	
+	const activeTab = document.querySelector(`[data-tab="${tabType}"]`);
+	activeTab.style.background = '#4CAF50';
+	activeTab.classList.add('active');
+	
+	// Update content
+	const content = document.getElementById('analysisContent');
+	const items = tabType === 'owned' ? itemAnalysisData.ownedItems : itemAnalysisData.notOwnedItems;
+	
+	if (items.length === 0) {
+		content.innerHTML = `<p style="color: #b3a082; text-align: center; font-size: 18px; margin-top: 50px;">
+			${tabType === 'owned' ? 'No items found that you own on this page.' : 'No items found that you don\'t own on this page.'}
+		</p>`;
+		return;
+	}
+	
+	let html = '<div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 15px;">';
+	
+	items.forEach(item => {
+		const wikiUrl = `http://aqwwiki.wikidot.com/${item.name.replace(/\s+/g, '-').toLowerCase()}`;
+		
+		// Generate tag icons
+		let tagIcons = '';
+		if (item.isAc) {
+			tagIcons += `<img src="http://aqwwiki.wdfiles.com/local--files/image-tags/aclarge.png" title="AC Item" style="height: 20px; margin-right: 5px;">`;
+		}
+		if (item.isLegend) {
+			tagIcons += `<img src="http://aqwwiki.wdfiles.com/local--files/image-tags/legendlarge.png" title="Legend Item" style="height: 20px; margin-right: 5px;">`;
+		}
+		if (item.isSeasonal) {
+			tagIcons += `<img src="http://aqwwiki.wdfiles.com/local--files/image-tags/seasonallarge.png" title="Seasonal Item" style="height: 20px; margin-right: 5px;">`;
+		}
+		if (!item.isAc && !item.isLegend) {
+			tagIcons += `<img src="${normal_icon}" title="Normal Item" style="height: 20px; margin-right: 5px;">`;
+		}
+		
+		// Add source icons if available
+		if (item.source) {
+			if (item.source.includes('Drop')) {
+				tagIcons += `<img src="${drop_icon}" title="Monster Drop" style="height: 20px; margin-right: 5px;">`;
+			}
+			if (item.source.includes('Quest')) {
+				tagIcons += `<img src="${quest_icon}" title="Quest Reward" style="height: 20px; margin-right: 5px;">`;
+			}
+			if (item.source.includes('Merge')) {
+				tagIcons += `<img src="${mergeshop_icon}" title="Merge Shop" style="height: 20px; margin-right: 5px;">`;
+			}
+		}
+		
+		const statusColor = tabType === 'owned' ? '#4CAF50' : '#f44336';
+		const statusText = tabType === 'owned' ? 'Owned' : 'Not Owned';
+		
+		html += `
+			<div style="
+				background: rgba(0,0,0,0.4); 
+				padding: 15px; 
+				border-radius: 8px; 
+				border: 1px solid #716550;
+				transition: all 0.3s ease;
+			" onmouseover="this.style.background='rgba(0,0,0,0.6)'" onmouseout="this.style.background='rgba(0,0,0,0.4)'">
+				<div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 10px;">
+					<a href="${wikiUrl}" target="_blank" style="
+						color: #4da6ff; 
+						text-decoration: none; 
+						font-weight: bold; 
+						font-size: 16px;
+						flex: 1;
+						margin-right: 10px;
+						word-break: break-word;
+					" onmouseover="this.style.textDecoration='underline'" onmouseout="this.style.textDecoration='none'">
+						${item.name}
+					</a>
+					<div style="
+						background: ${statusColor}; 
+						color: white; 
+						padding: 3px 8px; 
+						border-radius: 3px; 
+						font-size: 12px;
+						white-space: nowrap;
+					">
+						${statusText}
+					</div>
+				</div>
+				<div style="margin-bottom: 10px;">
+					${tagIcons}
+				</div>
+				${item.location && tabType === 'owned' ? `<div style="color: #4CAF50; font-size: 14px; margin-bottom: 5px;">
+					<strong>Location:</strong> ${item.location}
+				</div>` : ''}
+				${item.source ? `<div style="color: #b3a082; font-size: 14px; margin-bottom: 5px;">
+					<strong>Source:</strong> ${item.source}
+				</div>` : ''}
+				${item.category ? `<div style="color: #b3a082; font-size: 14px;">
+					<strong>Category:</strong> ${item.category}
+				</div>` : ''}
+			</div>
+		`;
+	});
+	
+	html += '</div>';
+	content.innerHTML = html;
+}
+
+function closeItemAnalysis() {
+	const dialog = document.getElementById('itemAnalysisDialog');
+	if (dialog) {
+		dialog.remove();
+	}
+}
+
+function processItemForAnalysis(nodeList, arrayOffset, x, Items, Buy, Category, Where, Type) {
+    // Use the EXACT same logic as ProcessWikiItem - no additional filtering
+    let nodeText = nodeList[arrayOffset+x].innerHTML.replace("'","'").trim();
+    let originalNodeText = nodeList[arrayOffset+x].textContent.trim();
+    
+    // Skip items with blank/empty names
+    if (!originalNodeText || originalNodeText.length === 0) {
+        console.log("Skipping blank item");
+        return;
+    }
+    
+    // Use Wiki Excluded Suffixes json to remove unused suffixes (same as ProcessWikiItem)
+    for (var i = 0; i < wiki_exclude_suffixes["Excluded"].length; i++) {
+        nodeText = nodeText.replace(wiki_exclude_suffixes["Excluded"][i],"")
+    }
+    nodeText = nodeText.toLowerCase();
+    
+    let nodeLink = nodeList[arrayOffset+x].href;
+    
+    // Use EXACTLY the same filtering logic as ProcessWikiItem
+    let isRep = nodeLink && !nodeLink.includes("-faction");
+    
+    if (isRep) {
+        // Enhanced filtering to remove obvious non-items
+        const isObviousNonItem = 
+            !nodeLink.includes("http://aqwwiki.wikidot.com/") ||
+            originalNodeText.toLowerCase().includes("edit this panel") ||
+            originalNodeText.toLowerCase().includes("list of all tags") ||
+            originalNodeText.toLowerCase().includes("alina's twitter") ||
+            originalNodeText.toLowerCase().includes("aqworlds wiki") ||
+            originalNodeText.toLowerCase().includes("merge shops") ||
+            originalNodeText.toLowerCase().includes("shops") ||
+            originalNodeText.toLowerCase().includes("(npc)") ||
+            originalNodeText.toLowerCase().includes("(location)") ||
+            originalNodeText.toLowerCase().includes("(shop)") ||
+            originalNodeText.toLowerCase().includes("(quest)") ||
+            originalNodeText.toLowerCase().includes("(monster)") ||
+            originalNodeText.toLowerCase().includes("category:") ||
+            originalNodeText.toLowerCase().includes("source:") ||
+            (originalNodeText.toLowerCase() === "world") ||
+            (originalNodeText.toLowerCase() === "lim") ||
+            nodeLink.includes("system:") ||
+            nodeLink.includes("/tag/") ||
+            nodeLink.includes("wikidot.com/nav:") ||
+            nodeLink.includes("wikidot.com/forum:") ||
+            // Filter very short text (likely not actual item names)
+            originalNodeText.trim().length < 2 ||
+            // Filter links that don't lead to actual item pages
+            !nodeLink.match(/^http:\/\/aqwwiki\.wikidot\.com\/[a-z0-9-]+$/);
+            
+        if (isObviousNonItem) {
+            console.log("Skipping non-item:", originalNodeText);
+            return; // Skip obvious non-items
+        }
+        
+        // Check for duplicates - skip if we already processed this item
+        const isDuplicate = itemAnalysisData.allProcessedItems.some(item => 
+            item.name.toLowerCase() === originalNodeText.toLowerCase() || 
+            item.link === nodeLink
+        );
+        
+        if (isDuplicate) {
+            console.log("Skipping duplicate item:", originalNodeText);
+            return;
+        }
+        
+        // COMPREHENSIVE DEBUGGING FOR OWNED ITEMS
+        console.log("=== PROCESSING ITEM ===");
+        console.log("Original text:", originalNodeText);
+        console.log("Cleaned text:", nodeText);
+        console.log("Link:", nodeLink);
+        console.log("Items array length:", Items.length);
+        
+        // Check if Items array is valid
+        if (!Items || !Array.isArray(Items) || Items.length === 0) {
+            console.log("❌ ERROR: Items array is invalid:", Items);
+        } else {
+            console.log("✅ Items array is valid with", Items.length, "items");
+        }
+        
+        // Test multiple variations for owned items
+        const ownedChecks = {
+            'nodeText': Items.includes(nodeText),
+            'originalNodeText': Items.includes(originalNodeText),
+            'originalLowerCase': Items.includes(originalNodeText.toLowerCase()),
+            'originalWithoutSpaces': Items.includes(originalNodeText.replace(/\s+/g, '')),
+            'nodeTextWithoutSpaces': Items.includes(nodeText.replace(/\s+/g, ''))
+        };
+        
+        console.log("Ownership checks:", ownedChecks);
+        
+        // Find any partial matches in the inventory
+        const partialMatches = Items.filter(item => 
+            item.toLowerCase().includes(nodeText.toLowerCase()) || 
+            nodeText.toLowerCase().includes(item.toLowerCase())
+        );
+        
+        if (partialMatches.length > 0) {
+            console.log("🔍 Partial matches found:", partialMatches);
+        }
+        
+        // Final ownership determination
+        const isOwned = Object.values(ownedChecks).some(check => check === true);
+        
+        console.log("Final isOwned result:", isOwned);
+        
+        if (isOwned) {
+            console.log("🎉 OWNED ITEM CONFIRMED:", originalNodeText);
+        } else {
+            console.log("❌ Item not owned:", originalNodeText);
+        }
+
+        // Detect item tags from HTML - check the current element and its parent
+        const currentHtml = nodeList[arrayOffset+x].innerHTML;
+        const parentHtml = nodeList[arrayOffset+x].parentNode ? nodeList[arrayOffset+x].parentNode.innerHTML : '';
+        
+        const isAc = currentHtml.includes("acsmall.png") || currentHtml.includes("aclarge.png") || 
+                     parentHtml.includes("acsmall.png") || parentHtml.includes("aclarge.png");
+        const isLegend = currentHtml.includes("legendsmall.png") || currentHtml.includes("legendlarge.png") || 
+                         parentHtml.includes("legendsmall.png") || parentHtml.includes("legendlarge.png");
+        const isSeasonal = currentHtml.includes("seasonalsmall.png") || currentHtml.includes("seasonallarge.png") || 
+                           parentHtml.includes("seasonalsmall.png") || parentHtml.includes("seasonallarge.png");
+        
+        // Try to get source information from sibling elements
+        let source = '';
+        try {
+            const parentNode = nodeList[arrayOffset+x].parentNode;
+            if (parentNode) {
+                const parentText = parentNode.textContent;
+                if (parentText.includes('Drop')) source = 'Monster Drop';
+                else if (parentText.includes('Quest')) source = 'Quest Reward';
+                else if (parentText.includes('Merge')) source = 'Merge Shop';
+                else if (parentText.includes('Shop')) source = 'Shop';
+            }
+        } catch (e) {
+            // Ignore errors
+        }
+        
+        // Get where the item is located if owned
+        let location = '';
+        if (isOwned) {
+            // Find the index using the same logic as ownership check
+            let itemIndex = -1;
+            for (const [checkType, checkResult] of Object.entries(ownedChecks)) {
+                if (checkResult) {
+                    if (checkType === 'nodeText') {
+                        itemIndex = Items.indexOf(nodeText);
+                    } else if (checkType === 'originalNodeText') {
+                        itemIndex = Items.indexOf(originalNodeText);
+                    } else if (checkType === 'originalLowerCase') {
+                        itemIndex = Items.indexOf(originalNodeText.toLowerCase());
+                    }
+                    // Add more cases as needed
+                    break;
+                }
+            }
+            
+            if (itemIndex >= 0 && Where && Where[itemIndex]) {
+                location = Where[itemIndex];
+                console.log("Found location for owned item:", location);
+            }
+        }
+        
+        const itemData = {
+            name: originalNodeText,
+            link: nodeLink,
+            isOwned: isOwned,
+            isAc: isAc,
+            isLegend: isLegend,
+            isSeasonal: isSeasonal,
+            source: source,
+            location: location,
+            category: window.location.pathname.split('/').pop() || 'Unknown'
+        };
+        
+        console.log("Final itemData:", itemData);
+        
+        // Add to analysis data
+        itemAnalysisData.allProcessedItems.push(itemData);
+        
+        if (isOwned) {
+            itemAnalysisData.ownedItems.push(itemData);
+            console.log("✅ Added to owned items array. Total owned now:", itemAnalysisData.ownedItems.length);
+        } else {
+            itemAnalysisData.notOwnedItems.push(itemData);
+            console.log("➡️ Added to not-owned items array. Total not-owned now:", itemAnalysisData.notOwnedItems.length);
+        }
+    }
+}
+
 function setFilterAc() {
 	chrome.storage.local.get({mergeFilterAc: false}, function(result){
 		chrome.storage.local.set({"mergeFilterAc": !result.mergeFilterAc}, function() {});
@@ -251,7 +678,9 @@ if (window.location.href == "https://account.aq.com/AQW/Inventory") {
 	// Creates Found amount element near title. 
 	var found_info = document.createElement("a") 
 	found_info.innerHTML = "- Found 0 Items"
-	found_info.style = "font-weight: bold;color:green;"
+	found_info.style = "font-weight: bold;color:green;cursor:pointer;text-decoration:none;"
+	found_info.title = "Click to open Item Analysis"
+	found_info.onclick = function() { showItemAnalysisPopup(); return false; }
 	Title.appendChild(found_info)
 	
 	
@@ -359,6 +788,8 @@ if (window.location.href == "https://account.aq.com/AQW/Inventory") {
 				
 				
 				
+				
+				
 			}
 			setTimeout(_add,500); 
 			// Don't ask it just sometimes doesn't work if timeout isn't specified and then is at beginning of list 
@@ -407,59 +838,93 @@ if (window.location.href == "https://account.aq.com/AQW/Inventory") {
 	
 	
 	
-	// Get items and process it 
-	chrome.storage.local.get({aqwitems: []}, function(result){
-			var Items = result.aqwitems;
-			var foundItems = []; // Array to store found item names
-			
-			if (isMerge) {
-				DisplayCostMergeShop(Items, mergeFilterNormal, mergeFilterAc, mergeFilterLegend)
-				FilterEvent = updateCostMergeShop.bind(null, Items, mergeFilterNormal, mergeFilterAc, mergeFilterLegend)
-				
 	
-			}
-	
-			
-			// Iterate over nodelist with array offset applied 
-			for (var x = 0; x < arrayList.length; x++) {
-				
-				// Store the current found count before processing
-				var prevFound = found;
-				
-				ProcessWikiItem(nodeList, arrayOffset, Items, Buy, Category, Where, Type, x, isMerge, isList, isQuest, isMonster) 
-				
-				// If found count increased, add this item to foundItems array
-				if (found > prevFound) {
-					var itemName = arrayList[x].textContent.trim() || arrayList[x].href;
-					if (itemName && !foundItems.includes(itemName)) {
-						foundItems.push(itemName);
-					}
-				}
-				
-				// Wip process (Can be enabled in options of Extension.
-				if (WIP_moreinfo) {
-			
-					ProcessAnyWikiItem(nodeList, arrayOffset, Buy, Category, Where, Type, x, isMonster, isQuest, isMerge)
-					
-				}
-			
-			
-			}
-			
-			
-			// Get unique items count by creating a Set of item names/links
-			const uniqueItems = new Set(arrayList.map(item => item.textContent.trim() || item.href));
-			const uniqueItemsCount = uniqueItems.size;
-			
-			// Displays found amount with hover tooltip showing found items
-			found_info.innerHTML = "- Found " + found + " / " + uniqueItemsCount + " Items" // Displays items found out of total unique items
-			found_info.title = foundItems.length > 0 ? "Items you have:\n" + foundItems.join("\n") : "No items found";
-			
-			// Save found items and current page for custom farm list integration
-			chrome.storage.local.set({lastFoundItems: foundItems}, function() {});
-			chrome.storage.local.set({lastWikiPage: window.location.href}, function() {});
-			
-	})
+		// Get items and process it 
+		chrome.storage.local.get({aqwitems: []}, function(result){
+            var Items = result.aqwitems;
+            var foundItems = []; // Array to store found item names
+            
+            // Debug: Log the Items array
+            console.log("Total items in inventory:", Items.length);
+            console.log("First 10 items:", Items.slice(0, 10));
+            
+            // Reset the counter for items processed by ProcessWikiItem and analysis data
+            totalItemsProcessed = 0;
+            itemAnalysisData.ownedItems = [];
+            itemAnalysisData.notOwnedItems = [];
+            itemAnalysisData.allProcessedItems = [];
+            
+            if (isMerge) {
+                DisplayCostMergeShop(Items, mergeFilterNormal, mergeFilterAc, mergeFilterLegend)
+                FilterEvent = updateCostMergeShop.bind(null, Items, mergeFilterNormal, mergeFilterAc, mergeFilterLegend)
+                
+
+
+            }
+
+            
+            // Iterate over nodelist with array offset applied 
+            for (var x = 0; x < arrayList.length; x++) {
+                
+                // Store the current found count before processing
+                var prevFound = found;
+                
+                ProcessWikiItem(nodeList, arrayOffset, Items, Buy, Category, Where, Type, x, isMerge, isList, isQuest, isMonster) 
+                
+                // If found count increased, log what ProcessWikiItem found
+                if (found > prevFound) {
+                    var itemName = arrayList[x].textContent.trim();
+                    console.log("*** ProcessWikiItem FOUND OWNED ITEM:", itemName, "Link:", arrayList[x].href);
+                }
+                
+                // Process item for analysis (collect data for popup)
+                processItemForAnalysis(nodeList, arrayOffset, x, Items, Buy, Category, Where, Type);
+                
+                // Build foundItems array from our analysis data for tooltip
+                if (itemAnalysisData.ownedItems.length > foundItems.length) {
+                    // New owned item was added
+                    const latestOwnedItem = itemAnalysisData.ownedItems[itemAnalysisData.ownedItems.length - 1];
+                    if (!foundItems.includes(latestOwnedItem.name)) {
+                        foundItems.push(latestOwnedItem.name);
+                    }
+                }
+                
+                // Wip process (Can be enabled in options of Extension.
+                if (WIP_moreinfo) {
+            
+                    ProcessAnyWikiItem(nodeList, arrayOffset, Buy, Category, Where, Type, x, isMonster, isQuest, isMerge)
+                    
+                }
+            
+            
+            }
+            
+            // Debug output
+            console.log("=== FINAL RESULTS ===");
+            console.log("ProcessWikiItem found:", found, "owned items");
+            console.log("ProcessWikiItem total processed:", totalItemsProcessed);
+            console.log("Analysis function - Owned:", itemAnalysisData.ownedItems.length);
+            console.log("Analysis function - Not owned:", itemAnalysisData.notOwnedItems.length);
+            console.log("Analysis function - Total:", itemAnalysisData.allProcessedItems.length);
+            
+            // Use our analysis data for the display (more accurate than ProcessWikiItem)
+            const ownedCount = itemAnalysisData.ownedItems.length;
+            const totalItemsCount = itemAnalysisData.allProcessedItems.length;
+            
+            // Displays found amount with hover tooltip showing found items
+            found_info.innerHTML = "- Found " + ownedCount + " / " + totalItemsCount + " Items" // Use our analysis counts
+            
+            // Build tooltip from our analysis data
+            const ownedItemNames = itemAnalysisData.ownedItems.map(item => item.name);
+            found_info.title = ownedItemNames.length > 0 ? 
+                "Items you have:\n" + ownedItemNames.join("\n") + "\n\nClick to open Item Analysis" : 
+                "No items found\n\nClick to open Item Analysis";
+                
+            // Save found items and current page for custom farm list integration
+            chrome.storage.local.set({lastFoundItems: ownedItemNames}, function() {});
+            chrome.storage.local.set({lastWikiPage: window.location.href}, function() {});
+            
+    })
 	
 	})
 	
